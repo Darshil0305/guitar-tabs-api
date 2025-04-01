@@ -5,9 +5,17 @@ import numpy as np
 from pydub import AudioSegment
 import tempfile
 import shutil
-from spleeter.separator import Separator
 
 logger = logging.getLogger(__name__)
+
+# Try to import Spleeter, but don't fail if it's not available
+SPLEETER_AVAILABLE = False
+try:
+    from spleeter.separator import Separator
+    SPLEETER_AVAILABLE = True
+    logger.info("Spleeter is available")
+except ImportError:
+    logger.warning("Spleeter is not available. Source separation will be disabled.")
 
 class SourceSeparation:
     """Service for isolating guitar tracks from mixed audio using Spleeter."""
@@ -27,13 +35,19 @@ class SourceSeparation:
         The 4stems model separates audio into vocals, drums, bass, and other.
         The "other" stem typically contains guitars and other melodic instruments.
         """
+        if not SPLEETER_AVAILABLE:
+            logger.warning("Spleeter is not available. Source separation is disabled.")
+            return False
+            
         if self.separator is None:
             try:
                 self.separator = Separator('spleeter:4stems')
                 logger.info("Spleeter separator initialized successfully")
+                return True
             except Exception as e:
                 logger.error(f"Failed to initialize Spleeter separator: {e}")
                 raise
+        return True
     
     def isolate_guitar(self, audio_path):
         """Isolate guitar track from the input audio file.
@@ -42,9 +56,17 @@ class SourceSeparation:
             audio_path: Path to the input audio file.
             
         Returns:
-            Path to the isolated guitar track audio file.
+            Path to the isolated guitar track audio file or original audio path if separation is not available.
         """
-        self.initialize_separator()
+        # Check if Spleeter is available
+        if not SPLEETER_AVAILABLE:
+            logger.warning("Source separation not available. Using original audio.")
+            return audio_path
+            
+        # Try to initialize separator
+        if not self.initialize_separator():
+            logger.warning("Failed to initialize separator. Using original audio.")
+            return audio_path
         
         input_path = Path(audio_path)
         if not input_path.exists():
@@ -77,7 +99,8 @@ class SourceSeparation:
             
         except Exception as e:
             logger.error(f"Error in source separation: {e}")
-            raise
+            # Fall back to the original audio if separation fails
+            return audio_path
     
     def _enhance_guitar_track(self, input_path, output_path):
         """Apply post-processing to enhance the isolated guitar track.
